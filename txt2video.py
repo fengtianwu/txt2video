@@ -21,7 +21,7 @@ def check_command_exists(command):
         print("Please install it to continue.", file=sys.stderr)
         sys.exit(1)
 
-def segment_text(file_path, max_chars):
+def segment_text(file_path):
     """
     Reads a text file and splits it into scenes based on blank lines.
     """
@@ -31,16 +31,10 @@ def segment_text(file_path, max_chars):
         print(f"Error: Input file not found at '{file_path}'", file=sys.stderr)
         sys.exit(1)
     scenes = re.split(r'\n\s*\n', text.strip())
-    validated_scenes = []
-    for i, scene in enumerate(scenes, 1):
-        scene_text = scene.strip()
-        if not scene_text:
-            continue
-        if len(scene_text) > max_chars:
-            print(f"Warning: Scene {i} exceeds --max-chars limit of {max_chars}. Truncating.", file=sys.stderr)
-            validated_scenes.append(scene_text[:max_chars])
-        else:
-            validated_scenes.append(scene_text)
+    
+    # Filter out any empty scenes that might result from multiple blank lines
+    validated_scenes = [scene.strip() for scene in scenes if scene.strip()]
+            
     if not validated_scenes:
         print("Error: No valid scenes found in input file.", file=sys.stderr)
         sys.exit(1)
@@ -73,7 +67,7 @@ def wrap_text(text, font_file, font_size, max_width, max_height):
     """
     Wraps text to fit within a specified width.
     Checks if the wrapped text exceeds a maximum height.
-    Returns the wrapped text and a boolean indicating if it overflowed.
+    Returns the wrapped text, a boolean indicating overflow, and suggestion text.
     """
     try:
         font = ImageFont.truetype(font_file, font_size) if font_file else ImageFont.load_default()
@@ -96,10 +90,20 @@ def wrap_text(text, font_file, font_size, max_width, max_height):
 
     # 2. Check for Vertical Overflow
     line_height = sum(font.getmetrics())
-    total_height = len(lines) * line_height
-    overflows = total_height > max_height
+    if line_height == 0: # Avoid division by zero for empty/bad fonts
+        return "\n".join(lines), False, None
+
+    max_lines = max_height // line_height
+    overflows = len(lines) > max_lines
     
-    return "\n".join(lines), overflows
+    suggestion = None
+    if overflows:
+        # The text that would have fit on screen
+        suggestion_lines = lines[:max_lines]
+        suggestion = "\n".join(suggestion_lines)
+
+    return "\n".join(lines), overflows, suggestion
+
 
 def generate_video_segment(scene_data, args, temp_dir, wrapped_text, font_file):
     """
@@ -160,8 +164,7 @@ def main():
     parser.add_argument("--voice", help="Set the TTS voice (system dependent).")
     parser.add_argument("--font-file", help="Path to a .ttf or .ttc font file.")
     parser.add_argument("--font-size", type=int, default=36, help="Set the font size.\n(default: 36)")
-    parser.add_argument("--max-chars", type=int, default=280, help="Set the maximum characters allowed per scene.\n(default: 280)")
-
+    
     if len(sys.argv) == 1:
         parser.print_help(sys.stderr)
         sys.exit(1)
@@ -175,7 +178,7 @@ def main():
     check_command_exists("ffmpeg")
     check_command_exists("ffprobe")
 
-    scenes = segment_text(args.input_file, args.max_chars)
+    scenes = segment_text(args.input_file)
     temp_dir = Path(tempfile.mkdtemp(prefix="txt2video_"))
     
     try:
@@ -224,15 +227,17 @@ def main():
             scene_text = data['text']
             
             print(f"Processing Scene {scene_num}/{len(scenes)} (Video)...")
-            wrapped_text, overflows = wrap_text(
+            wrapped_text, overflows, suggestion = wrap_text(
                 scene_text, font_file, args.font_size, max_text_width, max_text_height
             )
             
             if overflows:
                 print(f"\n--- ERROR: Scene {scene_num} is too long to fit on the screen. ---", file=sys.stderr)
                 print("Please split this scene into smaller parts in your input file.", file=sys.stderr)
-                print("\nProblematic scene content:", file=sys.stderr)
-                print(f"'{scene_text}'", file=sys.stderr)
+                print("\nSuggestion: Try splitting the scene around this point:", file=sys.stderr)
+                print("----------------------------------------------------", file=sys.stderr)
+                print(suggestion, file=sys.stderr)
+                print("----------------------------------------------------", file=sys.stderr)
                 sys.exit(1)
 
             video_path = generate_video_segment(data, args, temp_dir, wrapped_text, font_file)
