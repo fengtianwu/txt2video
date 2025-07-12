@@ -39,17 +39,36 @@ def segment_text(file_path):
 
 def generate_audio(scene_text, temp_dir, scene_num, voice=None):
     """
-    Generates a narrated audio file for a scene.
+    Generates a narrated audio file for a scene using macOS 'say' command.
+    Automatically selects a Chinese voice if Chinese text is detected and no voice is specified.
     """
     audio_file_aiff = temp_dir / f"scene_{scene_num}.aiff"
     audio_file_m4a = temp_dir / f"scene_{scene_num}.m4a"
     text_file = temp_dir / f"scene_{scene_num}_text.txt"
     text_file.write_text(scene_text, encoding='utf-8')
 
+    # Detect Chinese characters and select a default voice if needed
+    voice_to_use = voice
+    if not voice_to_use:
+        # Simple check for CJK Unified Ideographs
+        if any("\u4e00" <= char <= "\u9fff" for char in scene_text):
+            print("  - Chinese text detected. Using 'Ting-Ting' voice.")
+            voice_to_use = "Ting-Ting"
+
     cmd_say = ["say", "-o", str(audio_file_aiff), "-f", str(text_file)]
-    if voice:
-        cmd_say.extend(["-v", voice])
-    subprocess.run(cmd_say, check=True, capture_output=True)
+    if voice_to_use:
+        cmd_say.extend(["-v", voice_to_use])
+    
+    try:
+        subprocess.run(cmd_say, check=True, capture_output=True)
+    except subprocess.CalledProcessError as e:
+        print(f"Error generating audio for scene {scene_num} with 'say':", file=sys.stderr)
+        print(e.stderr.decode(), file=sys.stderr)
+        # Check if the voice is available
+        if "voice not found" in e.stderr.decode().lower():
+            print(f"\nHint: The voice '{voice_to_use}' was not found on your system.", file=sys.stderr)
+            print("You can list available voices with: say -v '?'", file=sys.stderr)
+        raise
 
     cmd_ffmpeg = ["ffmpeg", "-y", "-i", str(audio_file_aiff), "-c:a", "aac", "-b:a", "192k", str(audio_file_m4a)]
     subprocess.run(cmd_ffmpeg, check=True, capture_output=True)
@@ -59,6 +78,8 @@ def generate_audio(scene_text, temp_dir, scene_num, voice=None):
     duration = float(result.stdout.strip())
     
     return audio_file_m4a, duration
+
+
 
 def wrap_text(text, font_file, font_size, max_width):
     """
