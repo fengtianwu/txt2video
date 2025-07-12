@@ -1,0 +1,12 @@
+# Output files
+*.mp4
+*.aiff
+*.m4a
+
+# Temporary files
+*.txt
+!sample.txt
+
+# Python cache
+__pycache__/
+*.pyc
