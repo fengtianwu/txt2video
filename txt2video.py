@@ -69,29 +69,50 @@ def generate_audio(scene_text, temp_dir, scene_num, voice=None):
     
     return audio_file_m4a, duration
 
-def wrap_text(text, font_file, font_size, max_width):
+def wrap_text(text, font_file, font_size, max_width, max_height):
     """
-    Wraps text to fit within a specified width.
+    Wraps text to fit within a specified width and height.
+    Returns the wrapped text and a boolean indicating if truncation occurred.
     """
-    # font_file is now determined by main(). If it's None, load_default() is the fallback.
     try:
         font = ImageFont.truetype(font_file, font_size) if font_file else ImageFont.load_default()
     except IOError:
         print(f"Warning: Could not load font file '{font_file}'. Using Pillow's default.", file=sys.stderr)
         font = ImageFont.load_default()
 
-    wrapped_lines = []
+    # 1. Horizontal Wrapping
     words = text.split(' ')
+    lines = []
     current_line = ""
     for word in words:
         test_line = f"{current_line} {word}".strip()
         if font.getbbox(test_line)[2] <= max_width:
             current_line = test_line
         else:
-            wrapped_lines.append(current_line)
+            lines.append(current_line)
             current_line = word
-    wrapped_lines.append(current_line)
-    return "\n".join(wrapped_lines)
+    lines.append(current_line)
+
+    # 2. Vertical Truncation
+    line_height = sum(font.getmetrics())
+    was_truncated = False
+    while len(lines) * line_height > max_height:
+        lines.pop()
+        was_truncated = True
+
+    if was_truncated and lines:
+        # Add ellipsis to the last line
+        last_line = lines[-1].rstrip()
+        if len(last_line) > 3:
+             lines[-1] = last_line[:-3] + "..."
+        else:
+             lines[-1] = "..."
+    
+    if not lines and text:
+        print("Warning: Text could not fit into the defined height.", file=sys.stderr)
+        return "...", True
+
+    return "\n".join(lines), was_truncated
 
 def generate_video_segment(scene_data, args, temp_dir, wrapped_text, font_file):
     """
@@ -151,7 +172,7 @@ def main():
     parser.add_argument("--bg-image", help="Path to an image for the background (overrides --bg-color).")
     parser.add_argument("--voice", help="Set the TTS voice (system dependent).")
     parser.add_argument("--font-file", help="Path to a .ttf or .ttc font file.")
-    parser.add_argument("--font-size", type=int, default=72, help="Set the font size.\n(default: 72)")
+    parser.add_argument("--font-size", type=int, default=48, help="Set the font size.\n(default: 48)")
     parser.add_argument("--max-chars", type=int, default=280, help="Set the maximum characters allowed per scene.\n(default: 280)")
 
     if len(sys.argv) == 1:
@@ -186,6 +207,7 @@ def main():
         video_w, video_h = map(int, args.resolution.split('x'))
         margin = 100
         max_text_width = video_w - (2 * margin)
+        max_text_height = video_h - (2 * margin)
 
         # --- Font setup ---
         font_file = args.font_file
@@ -212,7 +234,12 @@ def main():
 
         for data in scene_data:
             print(f"Processing Scene {data['scene_num']}/{len(scenes)} (Video)...")
-            wrapped_text = wrap_text(data["text"], font_file, args.font_size, max_text_width)
+            wrapped_text, was_truncated = wrap_text(
+                data["text"], font_file, args.font_size, max_text_width, max_text_height
+            )
+            if was_truncated:
+                print(f"  - Warning: Scene {data['scene_num']} text was truncated to fit the screen.", file=sys.stderr)
+
             video_path = generate_video_segment(data, args, temp_dir, wrapped_text, font_file)
             print(f"  - Video: {video_path.name}")
             video_segments.append(video_path)
