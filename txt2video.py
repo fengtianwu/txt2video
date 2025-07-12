@@ -73,10 +73,11 @@ def wrap_text(text, font_file, font_size, max_width):
     """
     Wraps text to fit within a specified width.
     """
+    # font_file is now determined by main(). If it's None, load_default() is the fallback.
     try:
         font = ImageFont.truetype(font_file, font_size) if font_file else ImageFont.load_default()
     except IOError:
-        print(f"Warning: Font file not found at '{font_file}'. Using default.", file=sys.stderr)
+        print(f"Warning: Could not load font file '{font_file}'. Using Pillow's default.", file=sys.stderr)
         font = ImageFont.load_default()
 
     wrapped_lines = []
@@ -92,7 +93,7 @@ def wrap_text(text, font_file, font_size, max_width):
     wrapped_lines.append(current_line)
     return "\n".join(wrapped_lines)
 
-def generate_video_segment(scene_data, args, temp_dir, wrapped_text):
+def generate_video_segment(scene_data, args, temp_dir, wrapped_text, font_file):
     """
     Generates a video segment for a single scene.
     """
@@ -101,12 +102,20 @@ def generate_video_segment(scene_data, args, temp_dir, wrapped_text):
     audio_path = scene_data["audio_path"]
     video_path = temp_dir / f"scene_{scene_num}.mp4"
 
-    font_file_path = str(Path(args.font_file).resolve()) if args.font_file else "/System/Library/Fonts/Helvetica.ttc"
     margin = 100
-    escaped_text = wrapped_text.replace("'", "’").replace(":", "\\:").replace("%", "\\%")
+    # Escape text for ffmpeg filter
+    escaped_text = wrapped_text.replace("\\", "\\").replace("'", "’").replace(":", "\:").replace("%", "\%")
     
+    font_arg = ""
+    if font_file:
+        # Prepare font file path for ffmpeg, handling Windows paths
+        resolved_path = Path(font_file).resolve()
+        ffmpeg_font_path = str(resolved_path).replace("\\", "/")
+        ffmpeg_font_path = ffmpeg_font_path.replace(":", "\:")
+        font_arg = f"fontfile='{ffmpeg_font_path}':"
+
     drawtext_filter = (
-        f"drawtext=fontfile='{font_file_path}':text='{escaped_text}':"
+        f"drawtext={font_arg}text='{escaped_text}':"
         f"fontsize={args.font_size}:fontcolor=white:x={margin}:y={margin}:"
         f"box=1:boxcolor=black@0.0:boxborderw=20"
     )
@@ -130,6 +139,7 @@ def generate_video_segment(scene_data, args, temp_dir, wrapped_text):
     final_cmd = ["ffmpeg", "-y"] + cmd_ffmpeg
     subprocess.run(final_cmd, check=True, capture_output=True)
     return video_path
+
 
 def main():
     """Main function to run the txt2video conversion."""
@@ -176,15 +186,34 @@ def main():
         video_w, video_h = map(int, args.resolution.split('x'))
         margin = 100
         max_text_width = video_w - (2 * margin)
+
+        # --- Font setup ---
         font_file = args.font_file
-        if font_file and not Path(font_file).exists():
-            print(f"Warning: Font file '{font_file}' not found. Using default.", file=sys.stderr)
-            font_file = None
+        if font_file and Path(font_file).exists():
+            print(f"Using user-provided font: {font_file}")
+        else:
+            if font_file: # Provided but not found
+                print(f"Warning: Font file '{font_file}' not found.", file=sys.stderr)
+            
+            default_font_path = ""
+            if sys.platform == "darwin":
+                default_font_path = "/System/Library/Fonts/Helvetica.ttc"
+            elif sys.platform == "linux":
+                # Common location for a standard font
+                default_font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+
+            if default_font_path and Path(default_font_path).exists():
+                font_file = default_font_path
+                print(f"Using default system font: {font_file}")
+            else:
+                font_file = None
+                print("Warning: Could not find a default system font.", file=sys.stderr)
+                print("Text wrapping may be inaccurate as a fallback font will be used.", file=sys.stderr)
 
         for data in scene_data:
             print(f"Processing Scene {data['scene_num']}/{len(scenes)} (Video)...")
             wrapped_text = wrap_text(data["text"], font_file, args.font_size, max_text_width)
-            video_path = generate_video_segment(data, args, temp_dir, wrapped_text)
+            video_path = generate_video_segment(data, args, temp_dir, wrapped_text, font_file)
             print(f"  - Video: {video_path.name}")
             video_segments.append(video_path)
 
