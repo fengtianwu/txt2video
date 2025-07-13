@@ -4,11 +4,12 @@
 The script's purpose is to convert a plain text file into a narrated video.
 
 **2. Scene Segmentation**
-The input text is divided into scenes. Each scene is a block of text separated by one or more blank lines.
+*   The input text is divided into scenes. Each scene is a block of text separated by one or more blank lines.
+*   **Automatic Splitting**: If a scene is too long to fit on a single screen, it is automatically split into multiple, screen-sized sub-scenes.
 
 **3. Video Generation**
 Each scene becomes a video segment with the following properties:
-*   **Narration**: The text of the scene is read aloud using a system text-to-speech (TTS) engine.
+*   **Narration**: The text of the scene is read aloud using the system's text-to-speech (TTS) engine.
 *   **Visuals**: The text is displayed on screen as subtitles over a configurable background.
 *   **Timing**: The duration of each video segment is determined by the length of its narration.
 
@@ -16,7 +17,7 @@ Each scene becomes a video segment with the following properties:
 The on-screen text must be correctly formatted:
 *   It must be **left-aligned**.
 *   It must have **margins** on all sides.
-*   It must **wrap automatically** without words being cut off.
+*   It must **wrap automatically**. The wrapping is character-based to correctly handle both space-separated and non-space-separated languages (like Chinese).
 
 **5. Command-Line Interface**
 The script must be configurable via the following command-line options, each with a sensible default:
@@ -27,7 +28,6 @@ The script must be configurable via the following command-line options, each wit
 *   `--voice <name>`: Set the TTS voice.
 *   `--font-file <path>`: Path to a `.ttf` or `.ttc` font file.
 *   `--font-size <num>`: Set the font size.
-*   `--max-chars <num>`: Set the maximum characters allowed per scene.
 *   `--help`: Display a help message.
 
 **6. Development Methodology**
@@ -35,4 +35,5 @@ The script must be configurable via the following command-line options, each wit
 *   **Principle 2: Modular, Incremental Development**: The script will be built and confirmed in small, functional modules before final integration.
 
 **7. Robustness**
-The script must be compatible with standard macOS and Linux environments and handle errors gracefully.
+*   The script is compatible with standard macOS environments and handles errors gracefully.
+*   **CJK Support**: The script automatically detects Chinese characters and switches to a suitable system font (`PingFang.ttc`) and TTS voice (`Tingting`) to ensure correct rendering and narration.
