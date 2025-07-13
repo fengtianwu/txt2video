@@ -14,8 +14,8 @@ This tool takes a simple text or Markdown file, splits it into scenes, generates
 - **Text-to-Speech Narration**: Each scene is narrated using the system's TTS engine.
 - **Intelligent Font Handling**:
     - Automatically detects and wraps text for both English and CJK (Chinese, Japanese, Korean) languages.
-    - On macOS, automatically selects a system font that supports Chinese characters if detected.
-- **Customizable Visuals**: Configure video resolution, background color, or use a background image and custom fonts.
+    - On macOS, automatically selects a system font that supports Chinese characters (`PingFang.ttc`). For rare characters not included in this font, you can provide your own font file.
+- **Custom Fonts**: Specify a path to your own `.ttf` or `.ttc` font file via the `--font-file` argument.
 
 ## Requirements
 
