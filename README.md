@@ -2,20 +2,18 @@
 
 A Python script to convert a text or Markdown file into a narrated video using system tools.
 
-This tool takes a simple text or Markdown file, splits it into scenes, generates narration using the system's Text-to-Speech (TTS) engine, and combines it all into a video file with the text displayed on screen.
+This tool takes a simple text or Markdown file, splits it into scenes based on paragraph breaks, generates narration using the system's Text-to-Speech (TTS) engine, and combines it all into a video file with the text displayed on screen.
 
 ## Features
 
-- **Multi-Format Support**: Handles both plain text (`.txt`) and Markdown (`.md`) files.
-- **Scene Segmentation**:
-    - For `.txt` files, splits scenes by blank lines.
-    - For `.md` files, splits scenes by thematic breaks (`---`).
+- **Multi-Format Support**: Handles both plain text (`.txt`) and Markdown (`.md`) files. For Markdown, the formatting is stripped and the content is treated as plain text, preserving paragraph breaks as scene separators.
+- **Scene Segmentation**: Automatically splits scenes based on blank lines.
 - **Automatic Scene Splitting**: If a plain text scene is too long to fit on a single screen, it's automatically divided into multiple, perfectly sized sub-scenes.
 - **Text-to-Speech Narration**: Each scene is narrated using the system's TTS engine.
 - **Intelligent Font Handling**:
-    - Automatically detects and wraps text for both English and CJK (Chinese, Japanese, Korean) languages.
-    - On macOS, automatically selects a system font that supports Chinese characters if detected.
-- **Customizable Visuals**: Configure video resolution, background color, or use a background image and custom fonts.
+    - Automatically detects and wraps text for both English and CJK (Chinese, Japanese, Korean) languages using character-by-character measurement.
+    - On macOS, automatically selects a system font that supports Chinese characters.
+- **Custom Fonts**: For rare characters not included in the default system font, you can provide your own font file using the `--font-file` argument.
 
 ## Requirements
 
@@ -75,21 +73,19 @@ The script is run from the command line.
 
 **Processing a Markdown File**
 
-Create a file `story.md`:
-```markdown
-# Chapter 1
-
-This is the first scene. It has **bold** text.
-
----
-
-This is the second scene. The script will strip the formatting and read the plain text.
-```
-
-The script will convert the Markdown to plain text for narration and rendering.
+The script handles Markdown by converting it to plain text, using blank lines between paragraphs as scene separators.
 
 ```bash
 ./txt2video.py story.md
+```
+
+**Handling Missing Characters**
+
+If you see blank squares instead of characters, the default font is missing the glyphs for them. You can fix this by providing a path to a font that contains the characters.
+
+```bash
+# On macOS, you can find font paths with: system_profiler SPFontsDataType
+./txt2video.py my_file.txt --font-file "/path/to/your/font.ttf"
 ```
 
 ## License

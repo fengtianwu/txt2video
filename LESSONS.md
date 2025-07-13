@@ -1,35 +1,36 @@
 ### **Summary of Problems and Lessons Learned**
 
-1.  **Problem: Shell Scripting Fragility**
-    *   **Issue**: The initial shell script was plagued by repeated, subtle syntax errors (`unexpected EOF`, unclosed quotes, etc.), especially when parsing text and handling variables.
-    *   **Lesson**: For tasks involving complex string manipulation, process orchestration (calling `ffmpeg`, `ffprobe`), and floating-point math, shell scripting is the wrong tool. It is not robust enough. **Python is the correct tool for this job.**
+This document summarizes the key problems encountered during development. Each lesson is assigned an **Error Count**, representing the number of times a category of error caused a failure during our interactive session. Lessons with a higher count were more problematic and should be given special attention in future projects.
 
-2.  **Problem: Floating-Point Math in Shell**
-    *   **Issue**: The script failed with an `invalid arithmetic operator` error because the standard shell syntax `$((...))` does not support floating-point numbers.
-    *   **Lesson**: All floating-point calculations must be handled by a tool that explicitly supports them, like `bc` or, more appropriately, Python's native math capabilities.
+---
 
-3.  **Problem: Text Wrapping in `ffmpeg`**
-    *   **Issue**: The `drawtext` filter in `ffmpeg` does not handle automatic text wrapping reliably. The root cause is that the renderer calculates wrapping based on the full video width, not a margin-adjusted width.
-    *   **Lesson**: Do not rely on `ffmpeg` filters to perform "smart" text wrapping. The most reliable solution is to **manually pre-wrap the text** to the correct width *before* passing it to `ffmpeg`.
+**1. Problem: Font Rendering, Measurement, and CJK Support (Error Count: 7)**
+*   **Issue**: This was the most persistent category of error. Problems included:
+    1.  Rendering Chinese characters as "tofu" squares because the default font lacked the necessary glyphs.
+    2.  Incorrectly wrapping Chinese text because the logic was word-based (splitting on spaces) instead of character-based.
+    3.  Failing to find the correct path to system fonts (`PingFang.ttc`, `STHeitiTC-Medium.ttc`), even with hardcoded paths, due to the complexities of the macOS font system.
+*   **Lesson**: Robust multilingual text rendering is extremely difficult.
+    1.  **Unify Font Handling**: The exact same font file must be used for both text measurement (`Pillow`) and video rendering (`ffmpeg`).
+    2.  **Use CJK-Compatible Fonts**: When CJK text is detected, the script must switch to a known compatible font. The most reliable way to find this font is to use a system utility (e.g., `system_profiler SPFontsDataType`) to get the exact, full path, as simple paths are unreliable.
+    3.  **Wrap Character-by-Character**: Logic must iterate character-by-character, not word-by-word, to correctly handle all languages.
+    4.  **Provide User Overrides**: Always allow the user to specify their own font file (`--font-file`) as a final fallback.
 
-4.  **Problem: Monolithic Development**
-    *   **Issue**: By attempting to write the entire script in one step, any single error caused the whole process to fail, making debugging extremely difficult.
-    *   **Lesson**: A **modular, step-by-step development process** is required. Each component (e.g., text parsing, audio generation, video segment creation) must be built and verified independently.
+**2. Problem: Complex Dependencies and Environment Issues (Error Count: 6)**
+*   **Issue**: An attempt to render full Markdown formatting using `WeasyPrint` failed due to intractable environment issues. The library could not find its C-language dependencies (`pango`, `libffi`) because of conflicts between the system's Python environment (Anaconda) and Homebrew-installed libraries. Setting environment variables (`DYLD_LIBRARY_PATH`, `LDFLAGS`) was not sufficient to resolve the runtime linking errors.
+*   **Lesson**: Avoid complex C-dependencies when a simpler solution exists. The runtime environment is the hardest variable to control. A feature is not worth implementing if it makes the tool brittle and difficult to install. **Prioritize reliability over features.**
 
-5.  **Problem: Font Rendering and Measurement Mismatches**
-    *   **Issue**: The script initially failed to render Chinese characters (showing "tofu" squares) and wrapped them incorrectly. This was caused by three distinct issues:
-        1.  The font used for measuring text (`Pillow`) was not the same as the font used for rendering (`ffmpeg`), leading to inaccurate line breaks.
-        2.  The default system font did not contain glyphs for Chinese characters.
-        3.  The text-wrapping logic was word-based (splitting on spaces), which fails for languages like Chinese.
-    *   **Lesson**: For robust multilingual text rendering:
-        1.  **Unify Font Handling**: Ensure the exact same font file (`.ttf`, `.ttc`) is used for both text measurement and video rendering.
-        2.  **Use CJK-Compatible Fonts**: When Chinese, Japanese, or Korean text is detected, the script must automatically select a font known to support those characters (e.g., `PingFang.ttc` on macOS).
-        3.  **Wrap Character-by-Character**: Text wrapping logic must not assume words are separated by spaces. Iterating character-by-character is the only reliable way to handle both Western and CJK languages correctly.
+**3. Problem: Basic Python Scripting Errors (Error Count: 5)**
+*   **Issue**: The development process was plagued by simple `NameError`, `SyntaxError`, and `IndentationError` issues. These were often caused by incorrect refactoring, such as moving the `parser.parse_args()` call to the wrong place or having incorrect indentation in a `try...except` block.
+*   **Lesson**: Even with a modular approach, careful attention to basic Python syntax and structure is critical. Frequent, small-scale testing after every change is necessary to catch these simple errors before they compound.
 
-6.  **Problem: System Command Integration is Fragile**
-    *   **Issue**: Finding the correct path to system fonts is unreliable; hardcoded paths like `/System/Library/Fonts/PingFang.ttc` can be incorrect. Additionally, the macOS `say` command failed silently when a voice was unavailable or misnamed (`Ting-Ting` vs. `Tingting`).
-    *   **Lesson**: Do not guess system resource paths. The most reliable method is to use a system utility to find the exact resource location (e.g., `system_profiler SPFontsDataType` on macOS). For system commands, add robust error handling that checks for failures and provides users with helpful diagnostic hints (e.g., "Voice not found, run `say -v '?'` to see available voices.").
+**4. Problem: System Command Integration (`say`) (Error Count: 3)**
+*   **Issue**: The macOS `say` command failed in non-obvious ways. It produced a "Bad file descriptor" error when text was piped to it incorrectly, and it failed silently (producing no audio) when a specified voice was not installed or misnamed (`Ting-Ting` vs. `Tingting`).
+*   **Lesson**: System commands are external dependencies that can be fragile. It's crucial to add robust error handling that checks for failures and provides users with helpful diagnostic hints (e.g., "Voice not found, run `say -v '?'` to see available voices.").
 
-7.  **Problem: Complex Dependencies and Environment Issues**
-    *   **Issue**: An attempt to render full Markdown formatting using libraries like `WeasyPrint` failed due to intractable environment issues. The libraries could not find their C-language dependencies (`pango`, `libffi`) because of conflicts between the system's Python environment (Anaconda) and Homebrew-installed libraries.
-    *   **Lesson**: Avoid complex C-dependencies when a simpler solution exists. The environment is the hardest thing to control. While rendering full Markdown would be a great feature, it's not worth the cost if it makes the tool unusable for others. The simpler, more robust solution of stripping Markdown to plain text is preferable to a feature that is brittle and difficult to install. **Prioritize reliability over features.**
+**5. Problem: Incorrect Business Logic (Markdown Parsing) (Error Count: 1)**
+*   **Issue**: The initial implementation of Markdown support stripped all blank lines during the conversion to plain text. This broke the scene-splitting logic, which relies on those blank lines as delimiters.
+*   **Lesson**: When transforming data from one format to another, ensure the transformation preserves the essential metadata required by later processing steps. The conversion from Markdown to plain text needed to be more intelligent, preserving paragraph breaks as double newlines for the scene splitter.
+
+**6. Problem: Foundational Design (Shell Scripting) (Error Count: 1)**
+*   **Issue**: The very first attempt at this tool was a shell script, which was immediately plagued by subtle syntax errors and an inability to handle floating-point math.
+*   **Lesson**: Use the right tool for the job. For tasks involving complex string manipulation, process orchestration, and math, a high-level scripting language like Python is far more robust and appropriate than shell scripting.
