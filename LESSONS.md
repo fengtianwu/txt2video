@@ -29,3 +29,7 @@
 6.  **Problem: System Command Integration is Fragile**
     *   **Issue**: Finding the correct path to system fonts is unreliable; hardcoded paths like `/System/Library/Fonts/PingFang.ttc` can be incorrect. Additionally, the macOS `say` command failed silently when a voice was unavailable or misnamed (`Ting-Ting` vs. `Tingting`).
     *   **Lesson**: Do not guess system resource paths. The most reliable method is to use a system utility to find the exact resource location (e.g., `system_profiler SPFontsDataType` on macOS). For system commands, add robust error handling that checks for failures and provides users with helpful diagnostic hints (e.g., "Voice not found, run `say -v '?'` to see available voices.").
+
+7.  **Problem: Complex Dependencies and Environment Issues**
+    *   **Issue**: An attempt to render full Markdown formatting using libraries like `WeasyPrint` failed due to intractable environment issues. The libraries could not find their C-language dependencies (`pango`, `libffi`) because of conflicts between the system's Python environment (Anaconda) and Homebrew-installed libraries.
+    *   **Lesson**: Avoid complex C-dependencies when a simpler solution exists. The environment is the hardest thing to control. While rendering full Markdown would be a great feature, it's not worth the cost if it makes the tool unusable for others. The simpler, more robust solution of stripping Markdown to plain text is preferable to a feature that is brittle and difficult to install. **Prioritize reliability over features.**

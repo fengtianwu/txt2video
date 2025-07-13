@@ -1,25 +1,29 @@
 # txt2video
 
-A Python script to convert a plain text file into a narrated video using system tools.
+A Python script to convert a text or Markdown file into a narrated video using system tools.
 
-This tool takes a simple text file, splits it into scenes, generates narration using the system's Text-to-Speech (TTS) engine, and combines it all into a video file with the text displayed on screen.
+This tool takes a simple text or Markdown file, splits it into scenes, generates narration using the system's Text-to-Speech (TTS) engine, and combines it all into a video file with the text displayed on screen.
 
 ## Features
 
-- **Scene Segmentation**: Automatically splits text into scenes based on blank lines.
-- **Automatic Scene Splitting**: If a scene is too long to fit on a single screen, it's automatically divided into multiple, perfectly sized sub-scenes.
+- **Multi-Format Support**: Handles both plain text (`.txt`) and Markdown (`.md`) files.
+- **Scene Segmentation**:
+    - For `.txt` files, splits scenes by blank lines.
+    - For `.md` files, splits scenes by thematic breaks (`---`).
+- **Automatic Scene Splitting**: If a plain text scene is too long to fit on a single screen, it's automatically divided into multiple, perfectly sized sub-scenes.
 - **Text-to-Speech Narration**: Each scene is narrated using the system's TTS engine.
-- **Customizable Visuals**: Configure video resolution, background color, or use a background image.
 - **Intelligent Font Handling**:
     - Automatically detects and wraps text for both English and CJK (Chinese, Japanese, Korean) languages.
-    - On macOS, automatically selects a system font that supports Chinese characters if detected (`PingFang.ttc`).
-- **Custom Fonts**: Specify a path to your own `.ttf` or `.ttc` font file.
+    - On macOS, automatically selects a system font that supports Chinese characters if detected.
+- **Customizable Visuals**: Configure video resolution, background color, or use a background image and custom fonts.
 
 ## Requirements
 
 - Python 3.x
-- [Pillow](https://python-pillow.org/) library (`pip install Pillow`)
-- [ffmpeg](https://ffmpeg.org/) and `ffprobe` (must be in your system's PATH)
+- **Pillow** (`pip install Pillow`)
+- **Markdown** (`pip install markdown`)
+- **BeautifulSoup4** (`pip install beautifulsoup4`)
+- **ffmpeg** and `ffprobe` (must be in your system's PATH)
 - **macOS only**: The `say` command-line tool (pre-installed).
 
 ## Installation
@@ -30,9 +34,9 @@ This tool takes a simple text file, splits it into scenes, generates narration u
     cd txt2video
     ```
 
-2.  Install the required Python library:
+2.  Install the required Python libraries:
     ```bash
-    pip install Pillow
+    pip install Pillow markdown beautifulsoup4
     ```
 
 3.  Ensure `ffmpeg` is installed. If you use Homebrew on macOS:
@@ -52,7 +56,7 @@ The script is run from the command line.
 
 | Argument | Default | Description |
 |---|---|---|
-| `input_file` | (required) | Path to the input text file. |
+| `input_file` | (required) | Path to the input text or Markdown file. |
 | `--output` | `output.mp4` | Name of the output video file. |
 | `--resolution` | `1920x1080` | Video resolution (e.g., `1280x720`). |
 | `--bg-color` | `black` | Background color. |
@@ -69,34 +73,23 @@ The script is run from the command line.
 ./txt2video.py my_script.txt
 ```
 
-**Custom Output and Resolution**
-```bash
-./txt2video.py my_script.txt --output my_video.mp4 --resolution 1280x720
+**Processing a Markdown File**
+
+Create a file `story.md`:
+```markdown
+# Chapter 1
+
+This is the first scene. It has **bold** text.
+
+---
+
+This is the second scene. The script will strip the formatting and read the plain text.
 ```
 
-**Using a Background Image and a Specific Voice**
-```bash
-./txt2video.py my_script.txt --bg-image /path/to/background.jpg --voice "Daniel"
-```
-
-**Generating a Video with Chinese Text**
-
-Create a file `chinese.txt`:
-```
-这是第一个场景。
-
-这是一个非常长的中文场景，用来测试自动分屏功能。
-```
-
-The script will automatically detect the Chinese characters, select a compatible font and TTS voice ("Tingting") on macOS.
+The script will convert the Markdown to plain text for narration and rendering.
 
 ```bash
-./txt2video.py chinese.txt
-```
-
-To use a different Chinese voice, find one available on your system (`say -v '?'`) and specify it:
-```bash
-./txt2video.py chinese.txt --voice "Mei-Jia"
+./txt2video.py story.md
 ```
 
 ## License
