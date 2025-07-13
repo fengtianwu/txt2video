@@ -14,6 +14,12 @@ except ImportError:
     print("Error: The 'Pillow' library is required. Please install it with 'pip install Pillow'", file=sys.stderr)
     sys.exit(1)
 
+# --- Hardcoded Font Path ---
+# This path was determined dynamically and is specific to this macOS system.
+FONT_PATH_FOR_CJK = "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/3419f2a427639ad8c8e139149a287865a90fa17e.asset/AssetData/PingFang.ttc"
+FONT_PATH_DEFAULT = "/System/Library/Fonts/Helvetica.ttc"
+
+
 def check_command_exists(command):
     """Check if a command exists on the system."""
     if not shutil.which(command):
@@ -26,7 +32,7 @@ def segment_text(file_path):
     Reads a text file and splits it into scenes based on blank lines.
     """
     try:
-        text = Path(file_path).read_text()
+        text = Path(file_path).read_text(encoding='utf-8')
     except FileNotFoundError:
         print(f"Error: Input file not found at '{file_path}'", file=sys.stderr)
         sys.exit(1)
@@ -48,7 +54,6 @@ def generate_audio(scene_text, temp_dir, scene_num, voice=None):
 
     voice_to_use = voice
     if not voice_to_use and any("\u4e00" <= char <= "\u9fff" for char in scene_text):
-        print("  - Chinese text detected. Using 'Tingting' voice.")
         voice_to_use = "Tingting"
 
     cmd_say = ["say", "-o", str(audio_file_aiff), "-f", str(text_file)]
@@ -96,7 +101,7 @@ def wrap_text(text, font, max_width):
     
     return "\n".join(lines)
 
-def generate_video_segment(scene_data, args, temp_dir, wrapped_text, font_file):
+def generate_video_segment(scene_data, args, temp_dir, wrapped_text, font_path):
     """
     Generates a video segment for a single scene.
     """
@@ -108,14 +113,10 @@ def generate_video_segment(scene_data, args, temp_dir, wrapped_text, font_file):
     margin = 100
     escaped_text = wrapped_text.replace("\\", "\\\\").replace("'", "’").replace(":", "\\:").replace("%", "\\%")
     
-    font_arg = ""
-    if font_file:
-        resolved_path = Path(font_file).resolve()
-        ffmpeg_font_path = str(resolved_path).replace("\\", "/").replace(":", "\\:")
-        font_arg = f"fontfile='{ffmpeg_font_path}':"
-
+    font_file_for_ffmpeg = font_path.replace(":", "\\:")
+    
     drawtext_filter = (
-        f"drawtext={font_arg}text='{escaped_text}':"
+        f"drawtext=fontfile='{font_file_for_ffmpeg}':text='{escaped_text}':"
         f"fontsize={args.font_size}:fontcolor=white:x={margin}:y={margin}:"
         f"box=1:boxcolor=black@0.0:boxborderw=20"
     )
@@ -139,15 +140,10 @@ def generate_video_segment(scene_data, args, temp_dir, wrapped_text, font_file):
     subprocess.run(final_cmd, check=True, capture_output=True)
     return video_path
 
-def resplit_long_scenes(scenes, font, args):
+def resplit_long_scenes(scenes, font, max_width, max_height):
     """
     Takes a list of scenes and splits any that are too long into smaller sub-scenes.
     """
-    video_w, video_h = map(int, args.resolution.split('x'))
-    margin = 100
-    max_width = video_w - (2 * margin)
-    max_height = video_h - (2 * margin)
-    
     line_height = sum(font.getmetrics())
     if line_height == 0:
         return scenes
@@ -155,10 +151,8 @@ def resplit_long_scenes(scenes, font, args):
 
     final_scenes = []
     for scene_text in scenes:
-        # First, get all lines for the scene based on horizontal wrapping
         lines = wrap_text(scene_text.replace('\n', ' '), font, max_width).split('\n')
 
-        # Now, chunk these lines into screen-sized scenes
         if len(lines) <= max_lines_per_scene:
             final_scenes.append(scene_text)
         else:
@@ -193,12 +187,8 @@ def main():
     parser.add_argument("--font-file", help="Path to a .ttf or .ttc font file.")
     parser.add_argument("--font-size", type=int, default=36, help="Set the font size.\n(default: 36)")
 
-    if len(sys.argv) == 1:
-        parser.print_help(sys.stderr)
-        sys.exit(1)
     args = parser.parse_args()
     if not args.input_file:
-        print("Error: input_file is a required argument.", file=sys.stderr)
         parser.print_help(sys.stderr)
         sys.exit(1)
 
@@ -207,34 +197,26 @@ def main():
     check_command_exists("ffprobe")
 
     initial_scenes = segment_text(args.input_file)
-    
-    # --- Font setup ---
-    font_file_path = args.font_file
     contains_chinese = any("\u4e00" <= char <= "\u9fff" for scene in initial_scenes for char in scene)
-
-    if not (font_file_path and Path(font_file_path).exists()):
-        if font_file_path:
-            print(f"Warning: Font file '{font_file_path}' not found.", file=sys.stderr)
-        
-        if sys.platform == "darwin":
-            font_file_path = "/System/Library/Fonts/PingFang.ttc" if contains_chinese else "/System/Library/Fonts/Helvetica.ttc"
-        elif sys.platform == "linux":
-            font_file_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-        
-        if not (font_file_path and Path(font_file_path).exists()):
-            font_file_path = None
-            print("Warning: Could not find a suitable default system font.", file=sys.stderr)
-
-    if font_file_path:
-        print(f"Using font: {font_file_path}")
-
+    
+    font_path = args.font_file
+    if not font_path:
+        font_path = FONT_PATH_FOR_CJK if contains_chinese else FONT_PATH_DEFAULT
+    
+    print(f"Using font: {font_path}")
+    
     try:
-        font = ImageFont.truetype(font_file_path, args.font_size) if font_file_path else ImageFont.load_default()
+        font = ImageFont.truetype(font_path, args.font_size)
     except IOError:
-        print(f"Warning: Could not load font '{font_file_path}'. Using default.", file=sys.stderr)
-        font = ImageFont.load_default()
+        print(f"Fatal: Could not load font '{font_path}'. Please check the path or provide a valid one with --font-file.", file=sys.stderr)
+        sys.exit(1)
 
-    final_scenes = resplit_long_scenes(initial_scenes, font, args)
+    video_w, video_h = map(int, args.resolution.split('x'))
+    margin = 100
+    max_text_width = video_w - (2 * margin)
+    max_text_height = video_h - (2 * margin)
+
+    final_scenes = resplit_long_scenes(initial_scenes, font, max_text_width, max_text_height)
     if len(final_scenes) > len(initial_scenes):
         print(f"Long scenes were split. Original: {len(initial_scenes)}, New: {len(final_scenes)}.")
 
@@ -247,21 +229,15 @@ def main():
         for i, scene_text in enumerate(final_scenes, 1):
             print(f"Processing Scene {i}/{len(final_scenes)} (Audio)...")
             audio_path, audio_duration = generate_audio(scene_text, temp_dir, i, args.voice)
-            print(f"  - Audio: {audio_path.name} ({audio_duration:.2f}s)")
             scene_data.append({"scene_num": i, "text": scene_text, "audio_path": audio_path, "duration": audio_duration})
 
         video_segments = []
-        video_w, video_h = map(int, args.resolution.split('x'))
-        margin = 100
-        max_text_width = video_w - (2 * margin)
-
         for data in scene_data:
             scene_num = data['scene_num']
             scene_text = data['text']
             print(f"Processing Scene {scene_num}/{len(final_scenes)} (Video)...")
             wrapped_text = wrap_text(scene_text, font, max_text_width)
-            video_path = generate_video_segment(data, args, temp_dir, wrapped_text, font_file_path)
-            print(f"  - Video: {video_path.name}")
+            video_path = generate_video_segment(data, args, temp_dir, wrapped_text, font_path)
             video_segments.append(video_path)
 
         print("All scene segments generated.")
