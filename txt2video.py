@@ -33,8 +33,8 @@ def check_command_exists(command):
 
 def segment_text(file_path):
     """
-    Reads a text or markdown file and splits it into scenes based on blank lines.
-    If the file is markdown, it's converted to plain text before segmentation.
+    Reads a text or markdown file and splits it into scenes.
+    Markdown is converted to plain text before segmentation.
     """
     try:
         raw_text = Path(file_path).read_text(encoding='utf-8')
@@ -42,7 +42,6 @@ def segment_text(file_path):
         print(f"Error: Input file not found at '{file_path}'", file=sys.stderr)
         sys.exit(1)
 
-    # If it's a markdown file, convert to plain text first.
     if Path(file_path).suffix.lower() in ['.md', '.markdown']:
         print("Markdown file detected. Converting to plain text for processing.")
         html = markdown.markdown(raw_text)
@@ -51,9 +50,7 @@ def segment_text(file_path):
     else:
         text = raw_text
         
-    # Now, split the resulting text by one or more blank lines
     scenes = re.split(r'\n\s*\n', text.strip())
-    
     validated_scenes = [scene.strip() for scene in scenes if scene.strip()]
     if not validated_scenes:
         print("Error: No valid scenes found in input file.", file=sys.stderr)
