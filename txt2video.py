@@ -40,20 +40,16 @@ def segment_text(file_path):
 def generate_audio(scene_text, temp_dir, scene_num, voice=None):
     """
     Generates a narrated audio file for a scene using macOS 'say' command.
-    Automatically selects a Chinese voice if Chinese text is detected and no voice is specified.
     """
     audio_file_aiff = temp_dir / f"scene_{scene_num}.aiff"
     audio_file_m4a = temp_dir / f"scene_{scene_num}.m4a"
     text_file = temp_dir / f"scene_{scene_num}_text.txt"
     text_file.write_text(scene_text, encoding='utf-8')
 
-    # Detect Chinese characters and select a default voice if needed
     voice_to_use = voice
-    if not voice_to_use:
-        # Simple check for CJK Unified Ideographs
-        if any("\u4e00" <= char <= "\u9fff" for char in scene_text):
-            print("  - Chinese text detected. Using 'Ting-Ting' voice.")
-            voice_to_use = "Ting-Ting"
+    if not voice_to_use and any("\u4e00" <= char <= "\u9fff" for char in scene_text):
+        print("  - Chinese text detected. Using 'Tingting' voice.")
+        voice_to_use = "Tingting"
 
     cmd_say = ["say", "-o", str(audio_file_aiff), "-f", str(text_file)]
     if voice_to_use:
@@ -64,7 +60,6 @@ def generate_audio(scene_text, temp_dir, scene_num, voice=None):
     except subprocess.CalledProcessError as e:
         print(f"Error generating audio for scene {scene_num} with 'say':", file=sys.stderr)
         print(e.stderr.decode(), file=sys.stderr)
-        # Check if the voice is available
         if "voice not found" in e.stderr.decode().lower():
             print(f"\nHint: The voice '{voice_to_use}' was not found on your system.", file=sys.stderr)
             print("You can list available voices with: say -v '?'", file=sys.stderr)
@@ -79,28 +74,26 @@ def generate_audio(scene_text, temp_dir, scene_num, voice=None):
     
     return audio_file_m4a, duration
 
-
-
-def wrap_text(text, font_file, font_size, max_width):
+def wrap_text(text, font, max_width):
     """
-    Wraps text to fit within a specified width.
+    Wraps text to fit within a specified width using character-by-character measurement.
     """
-    try:
-        font = ImageFont.truetype(font_file, font_size) if font_file else ImageFont.load_default()
-    except IOError:
-        font = ImageFont.load_default()
-
-    words = text.split(' ')
     lines = []
     current_line = ""
-    for word in words:
-        test_line = f"{current_line} {word}".strip()
+    for char in text:
+        if char == '\n':
+            lines.append(current_line)
+            current_line = ""
+            continue
+        
+        test_line = f"{current_line}{char}"
         if font.getbbox(test_line)[2] <= max_width:
             current_line = test_line
         else:
             lines.append(current_line)
-            current_line = word
+            current_line = char
     lines.append(current_line)
+    
     return "\n".join(lines)
 
 def generate_video_segment(scene_data, args, temp_dir, wrapped_text, font_file):
@@ -146,15 +139,10 @@ def generate_video_segment(scene_data, args, temp_dir, wrapped_text, font_file):
     subprocess.run(final_cmd, check=True, capture_output=True)
     return video_path
 
-def resplit_long_scenes(scenes, font_file, args):
+def resplit_long_scenes(scenes, font, args):
     """
     Takes a list of scenes and splits any that are too long into smaller sub-scenes.
     """
-    try:
-        font = ImageFont.truetype(font_file, args.font_size) if font_file else ImageFont.load_default()
-    except IOError:
-        font = ImageFont.load_default()
-
     video_w, video_h = map(int, args.resolution.split('x'))
     margin = 100
     max_width = video_w - (2 * margin)
@@ -163,33 +151,20 @@ def resplit_long_scenes(scenes, font_file, args):
     line_height = sum(font.getmetrics())
     if line_height == 0:
         return scenes
-    max_lines = max_height // line_height
+    max_lines_per_scene = max_height // line_height
 
     final_scenes = []
     for scene_text in scenes:
-        words = scene_text.split(' ')
-        lines = []
-        current_line = ""
-        for word in words:
-            test_line = f"{current_line} {word}".strip()
-            if font.getbbox(test_line)[2] <= max_width:
-                current_line = test_line
-            else:
-                lines.append(current_line)
-                current_line = word
-        lines.append(current_line)
+        # First, get all lines for the scene based on horizontal wrapping
+        lines = wrap_text(scene_text.replace('\n', ' '), font, max_width).split('\n')
 
-        if len(lines) <= max_lines:
+        # Now, chunk these lines into screen-sized scenes
+        if len(lines) <= max_lines_per_scene:
             final_scenes.append(scene_text)
         else:
-            current_chunk = []
-            for i, line in enumerate(lines):
-                current_chunk.append(line)
-                if (i + 1) % max_lines == 0:
-                    final_scenes.append(" ".join(current_chunk))
-                    current_chunk = []
-            if current_chunk:
-                final_scenes.append(" ".join(current_chunk))
+            for i in range(0, len(lines), max_lines_per_scene):
+                chunk = lines[i:i + max_lines_per_scene]
+                final_scenes.append("\n".join(chunk))
                 
     return final_scenes
 
@@ -233,22 +208,33 @@ def main():
 
     initial_scenes = segment_text(args.input_file)
     
-    font_file = args.font_file
-    if not (font_file and Path(font_file).exists()):
-        if font_file:
-            print(f"Warning: Font file '{font_file}' not found.", file=sys.stderr)
-        if sys.platform == "darwin":
-            font_file = "/System/Library/Fonts/Helvetica.ttc"
-        elif sys.platform == "linux":
-            font_file = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-        
-        if not (font_file and Path(font_file).exists()):
-            font_file = None
-            print("Warning: Could not find a default system font.", file=sys.stderr)
-    if font_file:
-        print(f"Using font: {font_file}")
+    # --- Font setup ---
+    font_file_path = args.font_file
+    contains_chinese = any("\u4e00" <= char <= "\u9fff" for scene in initial_scenes for char in scene)
 
-    final_scenes = resplit_long_scenes(initial_scenes, font_file, args)
+    if not (font_file_path and Path(font_file_path).exists()):
+        if font_file_path:
+            print(f"Warning: Font file '{font_file_path}' not found.", file=sys.stderr)
+        
+        if sys.platform == "darwin":
+            font_file_path = "/System/Library/Fonts/PingFang.ttc" if contains_chinese else "/System/Library/Fonts/Helvetica.ttc"
+        elif sys.platform == "linux":
+            font_file_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+        
+        if not (font_file_path and Path(font_file_path).exists()):
+            font_file_path = None
+            print("Warning: Could not find a suitable default system font.", file=sys.stderr)
+
+    if font_file_path:
+        print(f"Using font: {font_file_path}")
+
+    try:
+        font = ImageFont.truetype(font_file_path, args.font_size) if font_file_path else ImageFont.load_default()
+    except IOError:
+        print(f"Warning: Could not load font '{font_file_path}'. Using default.", file=sys.stderr)
+        font = ImageFont.load_default()
+
+    final_scenes = resplit_long_scenes(initial_scenes, font, args)
     if len(final_scenes) > len(initial_scenes):
         print(f"Long scenes were split. Original: {len(initial_scenes)}, New: {len(final_scenes)}.")
 
@@ -273,8 +259,8 @@ def main():
             scene_num = data['scene_num']
             scene_text = data['text']
             print(f"Processing Scene {scene_num}/{len(final_scenes)} (Video)...")
-            wrapped_text = wrap_text(scene_text, font_file, args.font_size, max_text_width)
-            video_path = generate_video_segment(data, args, temp_dir, wrapped_text, font_file)
+            wrapped_text = wrap_text(scene_text, font, max_text_width)
+            video_path = generate_video_segment(data, args, temp_dir, wrapped_text, font_file_path)
             print(f"  - Video: {video_path.name}")
             video_segments.append(video_path)
 
