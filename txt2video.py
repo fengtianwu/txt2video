@@ -13,9 +13,14 @@ try:
 except ImportError:
     print("Error: The 'Pillow' library is required. Please install it with 'pip install Pillow'", file=sys.stderr)
     sys.exit(1)
+try:
+    import markdown
+    from bs4 import BeautifulSoup
+except ImportError:
+    print("Error: 'markdown' and 'beautifulsoup4' are required. Please install them with: pip install markdown beautifulsoup4", file=sys.stderr)
+    sys.exit(1)
 
-# --- Hardcoded Font Path ---
-# This path was determined dynamically and is specific to this macOS system.
+# --- Font Path Configuration ---
 FONT_PATH_FOR_CJK = "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/3419f2a427639ad8c8e139149a287865a90fa17e.asset/AssetData/PingFang.ttc"
 FONT_PATH_DEFAULT = "/System/Library/Fonts/Helvetica.ttc"
 
@@ -24,18 +29,27 @@ def check_command_exists(command):
     """Check if a command exists on the system."""
     if not shutil.which(command):
         print(f"Error: '{command}' is not installed or not in your PATH.", file=sys.stderr)
-        print("Please install it to continue.", file=sys.stderr)
         sys.exit(1)
 
 def segment_text(file_path):
     """
-    Reads a text file and splits it into scenes based on blank lines.
+    Reads a text or markdown file and splits it into scenes.
+    Markdown is converted to plain text before segmentation.
     """
     try:
-        text = Path(file_path).read_text(encoding='utf-8')
+        raw_text = Path(file_path).read_text(encoding='utf-8')
     except FileNotFoundError:
         print(f"Error: Input file not found at '{file_path}'", file=sys.stderr)
         sys.exit(1)
+
+    if Path(file_path).suffix.lower() in ['.md', '.markdown']:
+        print("Markdown file detected. Converting to plain text for processing.")
+        html = markdown.markdown(raw_text)
+        soup = BeautifulSoup(html, 'html.parser')
+        text = soup.get_text()
+    else:
+        text = raw_text
+        
     scenes = re.split(r'\n\s*\n', text.strip())
     validated_scenes = [scene.strip() for scene in scenes if scene.strip()]
     if not validated_scenes:
