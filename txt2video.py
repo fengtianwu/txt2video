@@ -21,7 +21,9 @@ except ImportError:
     sys.exit(1)
 
 # --- Font Path Configuration ---
-FONT_PATH_FOR_CJK = "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/3419f2a427639ad8c8e139149a287865a90fa17e.asset/AssetData/PingFang.ttc"
+#FONT_PATH_FOR_CJK = "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/3419f2a427639ad8c8e139149a287865a90fa17e.asset/AssetData/PingFang.ttc"
+FONT_PATH_FOR_CJK = "/System/Library/AssetsV2/com_apple_MobileAsset_Font7/9d5450ee93f17da1eacfa01b5e7b598f9e2dda2b.asset/AssetData/Baoli.ttc"
+
 FONT_PATH_DEFAULT = "/System/Library/Fonts/Helvetica.ttc"
 
 
@@ -92,13 +94,52 @@ def generate_audio(scene_text, temp_dir, scene_num, voice=None):
             print("You can list available voices with: say -v '?'", file=sys.stderr)
         raise
 
-    cmd_ffmpeg = ["ffmpeg", "-y", "-i", str(audio_file_aiff), "-c:a", "aac", "-b:a", "192k", str(audio_file_m4a)]
-    subprocess.run(cmd_ffmpeg, check=True, capture_output=True)
+    audio_file_aiff_raw = temp_dir / f"scene_{scene_num}_raw.aiff" # Raw output from say
+    audio_file_aiff_silent = temp_dir / f"scene_{scene_num}_silent.aiff" # After adding silence
+    audio_file_m4a = temp_dir / f"scene_{scene_num}.m4a"
+    text_file = temp_dir / f"scene_{scene_num}_text.txt"
+    text_file.write_text(scene_text, encoding='utf-8')
 
+    voice_to_use = voice
+    if not voice_to_use and any("\u4e00" <= char <= "\u9fff" for char in scene_text):
+        voice_to_use = "Tingting"
+
+    cmd_say = ["say", "-o", str(audio_file_aiff_raw), "-f", str(text_file)]
+    if voice_to_use:
+        cmd_say.extend(["-v", voice_to_use])
+
+    try:
+        subprocess.run(cmd_say, check=True, capture_output=True)
+    except subprocess.CalledProcessError as e:
+        print(f"Error generating audio for scene {scene_num} with 'say':", file=sys.stderr)
+        print(e.stderr.decode(), file=sys.stderr)
+        if "voice not found" in e.stderr.decode().lower():
+            print(f"\nHint: The voice '{voice_to_use}' was not found on your system.", file=sys.stderr)
+            print("You can list available voices with: say -v '?'", file=sys.stderr)
+        raise
+
+    # Add 0.5 seconds of silence to the beginning of the audio
+    silence_duration = 0.5
+    sample_rate = 44100 # Default sample rate for 'say' command output
+    cmd_add_silence = [
+        "ffmpeg", "-y",
+        "-f", "lavfi", "-i", f"anullsrc=duration={silence_duration}:sample_rate={sample_rate}",
+        "-i", str(audio_file_aiff_raw),
+        "-filter_complex", "[0:a][1:a]concat=n=2:v=0:a=1[out]",
+        "-map", "[out]",
+        str(audio_file_aiff_silent)
+    ]
+    subprocess.run(cmd_add_silence, check=True, capture_output=True)
+
+    # Convert the silent AIFF to M4A
+    cmd_ffmpeg_convert = ["ffmpeg", "-y", "-i", str(audio_file_aiff_silent), "-c:a", "aac", "-b:a", "192k", str(audio_file_m4a)]
+    subprocess.run(cmd_ffmpeg_convert, check=True, capture_output=True)
+
+    # Get the duration of the final M4A file (which now includes silence)
     cmd_ffprobe = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", str(audio_file_m4a)]
     result = subprocess.run(cmd_ffprobe, check=True, capture_output=True, text=True)
     duration = float(result.stdout.strip())
-    
+
     return audio_file_m4a, duration
 
 def wrap_text(text, font, max_width):
